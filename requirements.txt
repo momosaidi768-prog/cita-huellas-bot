@@ -1,6 +1,0 @@
-pyTelegramBotAPI
-stripe
-flask
-python-telegram-bot
-python-telegram-bot
-python-telegram-bot
