@@ -14,7 +14,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Con
 # CONFIG
 # =====================
 
-TOKEN = "8202293986:AAH2hTDMw4XjwsnatyfvzSmR-LDAz5ZidYE"
+TOKEN = "8202293986:AAEM9-Mz0fObdlFRbyxPFKJecL-cCBFwXpo"
 
 stripe.api_key = "YOUR_STRIPE_SECRET_KEY"
 BOT_URL = "https://t.me/YOUR_BOT_USERNAME"
