@@ -1,246 +1,429 @@
-import threading
-import time
-import requests
-import sqlite3
-import random
-
-from flask import Flask, redirect, request
+import os
+import re
 import stripe
+from flask import Flask, request, redirect
+from threading import Thread
 
-from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from openai import OpenAI
 
-# =====================
-# CONFIG
-# =====================
-
-TOKEN = "8202293986:AAEM9-Mz0fObdlFRbyxPFKJecL-cCBFwXpo"
-
-stripe.api_key = "YOUR_STRIPE_SECRET_KEY"
-BOT_URL = "https://t.me/YOUR_BOT_USERNAME"
-
-# =====================
-# DATABASE
-# =====================
-
-conn = sqlite3.connect("bot.db", check_same_thread=False)
-cursor = conn.cursor()
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS users (
-    chat_id INTEGER PRIMARY KEY,
-    city TEXT,
-    office TEXT,
-    vip_until INTEGER DEFAULT 0
+from telegram import (
+    ReplyKeyboardMarkup,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup
 )
-""")
 
-conn.commit()
+from telegram.ext import (
+    ApplicationBuilder,
+    MessageHandler,
+    CommandHandler,
+    CallbackQueryHandler,
+    filters,
+    ContextTypes
+)
 
-def save_user(chat_id, city=None, office=None):
-    cursor.execute("INSERT OR IGNORE INTO users(chat_id) VALUES (?)", (chat_id,))
-    if city:
-        cursor.execute("UPDATE users SET city=? WHERE chat_id=?", (city, chat_id))
-    if office:
-        cursor.execute("UPDATE users SET office=? WHERE chat_id=?", (office, chat_id))
-    conn.commit()
+# ================= CONFIG =================
 
-def set_vip(chat_id):
-    expire = int(time.time()) + 30 * 24 * 60 * 60
-    cursor.execute("UPDATE users SET vip_until=? WHERE chat_id=?", (expire, chat_id))
-    conn.commit()
+TOKEN = os.getenv("TOKEN")
+STRIPE_KEY = os.getenv("STRIPE_KEY")
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
+BOT_URL = os.getenv("BOT_URL")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-def is_vip(chat_id):
-    row = cursor.execute("SELECT vip_until FROM users WHERE chat_id=?", (chat_id,)).fetchone()
-    return row and row[0] > time.time()
+stripe.api_key = STRIPE_KEY
 
-def get_users():
-    return cursor.execute("SELECT chat_id, city, office FROM users").fetchall()
+client = OpenAI(
+    api_key=OPENAI_API_KEY
+)
 
-# =====================
-# FLASK APP (PAYMENT)
-# =====================
+# ================= FLASK =================
 
-webapp = Flask(__name__)
+app = Flask(__name__)
 
-@webapp.route("/pay/<chat_id>")
-def pay(chat_id):
-
-    session = stripe.checkout.Session.create(
-        payment_method_types=["card"],
-        mode="payment",
-        line_items=[{
-            "price_data": {
-                "currency": "eur",
-                "product_data": {
-                    "name": "VIP Subscription"
-                },
-                "unit_amount": 999
-            },
-            "quantity": 1
-        }],
-        success_url=BOT_URL,
-        cancel_url=BOT_URL,
-        metadata={"chat_id": chat_id}
-    )
-
-    return redirect(session.url, code=303)
-
-
-@webapp.route("/webhook", methods=["POST"])
-def webhook():
-
-    event = request.json
-
-    if event["type"] == "checkout.session.completed":
-
-        chat_id = int(event["data"]["object"]["metadata"]["chat_id"])
-        set_vip(chat_id)
-
-        print("✅ VIP ACTIVATED:", chat_id)
-
-    return "ok"
-
-# =====================
-# BOT STATE
-# =====================
+# ================= DATA =================
 
 state = {}
+user_data = {}
+vip_users = set()
 
-def menu():
-    return ReplyKeyboardMarkup([
-        ["🚀 Start"],
-        ["📅 Appointment", "💳 VIP"],
-        ["ℹ️ Help"]
-    ], resize_keyboard=True)
+# ================= STRIPE PRICES =================
 
-# =====================
-# START
-# =====================
+PRICES = {
+    "basic": "price_1TYHooFzJxKrHNTP4xtIxeR4",
+    "standard": "price_1TYHX5FzJxKrHNTPRws57oCN",
+    "premium": "price_1TYHxaFzJxKrHNTPCDluAs7e"
+}
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ================= AI =================
 
-    await update.message.reply_text(
-        "👋 Welcome Bot SaaS",
-        reply_markup=menu()
+async def ai_reply(user_text):
+
+    try:
+
+        response = client.chat.completions.create(
+
+            model="gpt-4.1-mini",
+
+            messages=[
+
+                {
+                    "role": "system",
+                    "content": """
+أنت مساعد ذكي واحترافي خاص بحجز cita huellas في إسبانيا.
+
+المهام:
+- تساعد المستخدم خطوة بخطوة
+- تجاوب بالعربية والفرنسية والإسبانية
+- تشرح NIE وTIE وAsilo
+- تساعد المستخدم في الإدخال
+- تكون لطيف واحترافي
+- تقنع المستخدم يشترك VIP
+- تجاوب بشكل قصير وواضح
+"""
+                },
+
+                {
+                    "role": "user",
+                    "content": user_text
+                }
+
+            ]
+
+        )
+
+        return response.choices[0].message.content
+
+    except Exception as e:
+        return f"❌ AI Error: {e}"
+
+# ================= START =================
+
+async def start(update, context):
+
+    keyboard = ReplyKeyboardMarkup(
+        [["🚀 Start"]],
+        resize_keyboard=True
     )
 
-# =====================
-# VIP BUTTON
-# =====================
+    await update.message.reply_text(
+        "👋 مرحبا بك في البوت الذكي للحجز\nاضغط Start للبدء",
+        reply_markup=keyboard
+    )
 
-async def vip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ================= HANDLE =================
 
-    chat_id = update.effective_chat.id
-
-    url = f"http://127.0.0.1:5000/pay/{chat_id}"
-
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("💳 9.99€ VIP", url=url)]
-    ])
-
-    await update.message.reply_text("💳 Upgrade VIP", reply_markup=keyboard)
-
-# =====================
-# HANDLER
-# =====================
-
-async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle(update, context: ContextTypes.DEFAULT_TYPE):
 
     chat_id = update.effective_chat.id
     text = update.message.text
 
+    # ================= START FLOW =================
+
     if text == "🚀 Start":
+
+        state[chat_id] = "name"
+        user_data[chat_id] = {}
+
+        await update.message.reply_text(
+            "👤 اكتب الاسم الكامل:"
+        )
+        return
+
+    # ================= NAME =================
+
+    if chat_id in state and state[chat_id] == "name":
+
+        user_data[chat_id]["name"] = text
+
+        state[chat_id] = "nie"
+
+        await update.message.reply_text(
+            "🆔 اكتب NIE:"
+        )
+        return
+
+    # ================= NIE =================
+
+    if chat_id in state and state[chat_id] == "nie":
+
+        if not re.match(r'^[XYZ][0-9]{7}[A-Z]$', text.upper()):
+
+            await update.message.reply_text(
+                "❌ NIE غير صحيح\nمثال: X1234567L"
+            )
+            return
+
+        user_data[chat_id]["nie"] = text.upper()
+
         state[chat_id] = "city"
-        await update.message.reply_text("🏙️ اكتب المدينة")
+
+        await update.message.reply_text(
+            "🏙️ اكتب المدينة:"
+        )
         return
 
-    if text == "📅 Appointment":
-        state[chat_id] = "city"
-        await update.message.reply_text("🏙️ اكتب المدينة")
+    # ================= CITY =================
+
+    if chat_id in state and state[chat_id] == "city":
+
+        user_data[chat_id]["city"] = text
+
+        state[chat_id] = "service"
+
+        keyboard = ReplyKeyboardMarkup(
+            [
+                ["Huellas", "Asilo"],
+                ["Recogida NIE", "Extranjería"]
+            ],
+            resize_keyboard=True
+        )
+
+        await update.message.reply_text(
+            "📄 اختر الخدمة:",
+            reply_markup=keyboard
+        )
+
         return
 
-    if text == "💳 VIP":
-        await vip(update, context)
+    # ================= SERVICE =================
+
+    if chat_id in state and state[chat_id] == "service":
+
+        user_data[chat_id]["service"] = text
+
+        state[chat_id] = "confirm"
+
+        d = user_data[chat_id]
+
+        keyboard = InlineKeyboardMarkup([
+
+            [
+                InlineKeyboardButton(
+                    "💳 الدفع",
+                    callback_data="pay"
+                )
+            ]
+
+        ])
+
+        await update.message.reply_text(
+
+            f"📋 تأكيد المعلومات:\n\n"
+
+            f"👤 الاسم: {d['name']}\n"
+            f"🆔 NIE: {d['nie']}\n"
+            f"🏙️ المدينة: {d['city']}\n"
+            f"📄 الخدمة: {d['service']}",
+
+            reply_markup=keyboard
+        )
+
         return
 
-    if text == "ℹ️ Help":
-        await update.message.reply_text("📌 استعمل الأزرار أو كتب المدينة")
-        return
+    # ================= AI CHAT =================
 
-    if state.get(chat_id) == "city":
-        save_user(chat_id, city=text)
-        state[chat_id] = "office"
-        await update.message.reply_text("🏢 المكتب")
-        return
+    reply = await ai_reply(text)
 
-    if state.get(chat_id) == "office":
-        save_user(chat_id, office=text)
-        state.pop(chat_id)
+    await update.message.reply_text(reply)
 
-        await update.message.reply_text("✔ تم التسجيل بنجاح")
+# ================= CALLBACK =================
 
-# =====================
-# MONITOR SYSTEM
-# =====================
+async def confirm(update, context):
 
-def monitor():
+    query = update.callback_query
 
-    last_state = False
+    await query.answer()
 
-    while True:
+    chat_id = query.message.chat.id
 
-        users = get_users()
+    if query.data == "pay":
 
-        for chat_id, city, office in users:
+        keyboard = InlineKeyboardMarkup([
 
-            if not is_vip(chat_id):
-                continue
+            [
+                InlineKeyboardButton(
+                    "💎 Basic - 9.99€",
+                    url=f"{BOT_URL}/pay/{chat_id}/basic"
+                )
+            ],
 
-            available = random.choice([True, False])
+            [
+                InlineKeyboardButton(
+                    "🔥 Standard - 19.99€",
+                    url=f"{BOT_URL}/pay/{chat_id}/standard"
+                )
+            ],
 
-            if available and not last_state:
+            [
+                InlineKeyboardButton(
+                    "🚀 Premium - 29.99€",
+                    url=f"{BOT_URL}/pay/{chat_id}/premium"
+                )
+            ]
 
-                try:
-                    requests.post(
-                        f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-                        json={
-                            "chat_id": chat_id,
-                            "text": f"🚨 Slot available in {city}"
-                        }
-                    )
-                except:
-                    pass
+        ])
 
-        last_state = available
-        time.sleep(60)
+        await query.message.reply_text(
+            "💳 اختر الباقة:",
+            reply_markup=keyboard
+        )
 
-# =====================
-# BOT RUNNER
-# =====================
+# ================= PAYMENT =================
+
+@app.route("/pay/<chat_id>/<plan>")
+def pay(chat_id, plan):
+
+    if plan not in PRICES:
+        return "Invalid plan", 400
+
+    try:
+
+        session = stripe.checkout.Session.create(
+
+            mode="payment",
+
+            payment_method_types=["card"],
+
+            line_items=[
+                {
+                    "price": PRICES[plan],
+                    "quantity": 1
+                }
+            ],
+
+            success_url=f"{BOT_URL}/success",
+
+            cancel_url=f"{BOT_URL}/cancel",
+
+            metadata={
+                "chat_id": chat_id
+            }
+
+        )
+
+        return redirect(session.url)
+
+    except Exception as e:
+
+        return str(e), 500
+
+# ================= WEBHOOK =================
+
+@app.route("/webhook", methods=["POST"])
+def webhook():
+
+    payload = request.data
+
+    sig_header = request.headers.get(
+        "Stripe-Signature"
+    )
+
+    try:
+
+        event = stripe.Webhook.construct_event(
+            payload,
+            sig_header,
+            WEBHOOK_SECRET
+        )
+
+    except Exception as e:
+
+        return str(e), 400
+
+    # الدفع ناجح
+
+    if event["type"] == "checkout.session.completed":
+
+        session = event["data"]["object"]
+
+        chat_id = int(
+            session["metadata"]["chat_id"]
+        )
+
+        vip_users.add(chat_id)
+
+        bot_app.bot.send_message(
+
+            chat_id=chat_id,
+
+            text=(
+                "✅ تم الدفع بنجاح\n"
+                "🚀 تم تفعيل VIP"
+            )
+
+        )
+
+    return "OK", 200
+
+# ================= ROUTES =================
+
+@app.route("/")
+def home():
+
+    return "✅ Bot is running"
+
+@app.route("/success")
+def success():
+
+    return "✅ Payment successful"
+
+@app.route("/cancel")
+def cancel():
+
+    return "❌ Payment canceled"
+
+# ================= BOT =================
 
 def run_bot():
 
-    app = ApplicationBuilder().token(TOKEN).build()
+    global bot_app
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
+    bot_app = (
+        ApplicationBuilder()
+        .token(TOKEN)
+        .build()
+    )
 
-    print("🤖 BOT RUNNING...")
+    # start
 
-    app.run_polling()
+    bot_app.add_handler(
+        CommandHandler("start", start)
+    )
 
-# =====================
-# MAIN (IMPORTANT FIX)
-# =====================
+    # messages
+
+    bot_app.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            handle
+        )
+    )
+
+    # callback
+
+    bot_app.add_handler(
+        CallbackQueryHandler(confirm)
+    )
+
+    print("✅ AI Bot Running...")
+
+    bot_app.run_polling(
+        drop_pending_updates=True
+    )
+
+# ================= MAIN =================
 
 if __name__ == "__main__":
 
-    # start monitor in background
-    threading.Thread(target=monitor, daemon=True).start()
+    port = int(
+        os.environ.get("PORT", 10000)
+    )
 
-    # start flask in background thread
-    threading.Thread(target=lambda: webapp.run(host="0.0.0.0", port=5000), daemon=True).start()
+    Thread(
+        target=lambda: app.run(
+            host="0.0.0.0",
+            port=port
+        ),
+        daemon=True
+    ).start()
 
-    # run bot (ONLY THIS in main thread)
     run_bot()
