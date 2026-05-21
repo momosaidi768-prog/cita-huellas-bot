@@ -8,7 +8,7 @@ from playwright.async_api import async_playwright
 
 TOKEN = os.getenv("8202293986:AAEnZuCcvl6Gf98Th9b6hnfj3ZLg6gmnC5k")
 
-ADMIN_ID = os.getenv("6675176280")
+ADMIN_ID = 6675176280
 if ADMIN_ID is None:
     raise Exception("ADMIN_ID not set in Railway Variables")
 
