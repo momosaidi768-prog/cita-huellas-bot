@@ -78,7 +78,6 @@ def get_users_by_city(city):
 # ================= PLAYWRIGHT =================
 
 async def check(page, city):
-
     try:
         await page.goto(URL, timeout=60000)
         await page.wait_for_load_state("domcontentloaded")
@@ -102,12 +101,11 @@ async def check(page, city):
     except:
         return False
 
-# ================= BOT CONTROL =================
+# ================= BOT LOOP =================
 
 running = False
 
 async def worker():
-
     global running
 
     async with async_playwright() as p:
@@ -115,7 +113,6 @@ async def worker():
             headless=True,
             args=["--no-sandbox"]
         )
-
         page = await browser.new_page()
 
         while running:
@@ -129,7 +126,6 @@ async def worker():
                     found = await check(page, city)
 
                     if found:
-
                         await tg.send(f"""
 🔥 APPOINTMENT FOUND
 
@@ -152,7 +148,7 @@ async def worker():
 
         await browser.close()
 
-# ================= HANDLER =================
+# ================= COMMANDS =================
 
 async def handle(text):
 
