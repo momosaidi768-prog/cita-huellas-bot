@@ -4,10 +4,11 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from playwright.async_api import async_playwright
 
+# ================= CONFIG =================
 TOKEN = os.getenv("8202293986:AAEnZuCcvl6Gf98Th9b6hnfj3ZLg6gmnC5k")
 ADMIN_ID = int(os.getenv("6675176280"))
 
-# ================= CHECK ADMIN =================
+# ================= SECURITY =================
 def is_admin(user_id):
     return user_id == ADMIN_ID
 
@@ -26,12 +27,12 @@ async def open_site(url: str):
 
         await browser.close()
 
-# ================= TELEGRAM COMMANDS =================
+# ================= TELEGRAM BOT =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         return await update.message.reply_text("⛔ Not allowed")
 
-    await update.message.reply_text("✔ Bot running\nUse /open https://example.com")
+    await update.message.reply_text("Bot is running ✔\nUse /open https://example.com")
 
 async def open_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
