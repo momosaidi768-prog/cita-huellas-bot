@@ -1,4 +1,5 @@
 import os
+import asyncio
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from playwright.async_api import async_playwright
@@ -6,7 +7,7 @@ from playwright.async_api import async_playwright
 TOKEN = os.getenv("8202293986:AAEnZuCcvl6Gf98Th9b6hnfj3ZLg6gmnC5k")
 ADMIN_ID = int(os.getenv("6675176280"))
 
-# ================= ADMIN =================
+# ================= CHECK ADMIN =================
 def is_admin(user_id):
     return user_id == ADMIN_ID
 
@@ -25,19 +26,19 @@ async def open_site(url: str):
 
         await browser.close()
 
-# ================= COMMANDS =================
+# ================= TELEGRAM COMMANDS =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         return await update.message.reply_text("⛔ Not allowed")
 
-    await update.message.reply_text("✔ Bot running\nUse /open https://site.com")
+    await update.message.reply_text("✔ Bot running\nUse /open https://example.com")
 
 async def open_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         return await update.message.reply_text("⛔ Not allowed")
 
     if not context.args:
-        return await update.message.reply_text("Example: /open https://example.com")
+        return await update.message.reply_text("Use: /open https://example.com")
 
     url = context.args[0]
 
@@ -49,7 +50,7 @@ async def open_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"Error: {e}")
 
-# ================= RUN =================
+# ================= MAIN =================
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
