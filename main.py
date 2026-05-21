@@ -1,8 +1,10 @@
 import os
+import asyncio
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from playwright.async_api import async_playwright
 
+# ================= CONFIG =================
 TOKEN = os.getenv("8202293986:AAEnZuCcvl6Gf98Th9b6hnfj3ZLg6gmnC5k")
 ADMIN_ID = int(os.getenv("6675176280"))
 
@@ -30,7 +32,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text("⛔ Not allowed")
 
     await update.message.reply_text(
-        "Bot is running ✔\nUse:\n/open https://example.com"
+        "Bot is running ✔\nCommand:\n/open https://example.com"
     )
 
 async def open_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
