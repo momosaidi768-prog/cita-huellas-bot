@@ -10,8 +10,8 @@ from playwright.async_api import async_playwright
 
 # ================= CONFIG =================
 
-TOKEN = os.getenv("8202293986:AAEnZuCcvl6Gf98Th9b6hnfj3ZLg6gmnC5k")
-ADMIN_ID = int(os.getenv("6675176280"))
+TOKEN = "8202293986:AAEnZuCcvl6Gf98Th9b6hnfj3ZLg6gmnC5k"
+ADMIN_ID = 6675176280
 
 # ================= ADMIN CHECK =================
 
