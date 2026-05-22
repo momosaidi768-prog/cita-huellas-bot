@@ -6,11 +6,16 @@ from playwright.async_api import async_playwright
 
 # ================= CONFIG =================
 
-TOKEN = os.getenv("8202293986:AAEnZuCcvl6Gf98Th9b6hnfj3ZLg6gmnC5k")
+# مهم: خاص يكونو فـ Railway Variables
+TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise Exception("BOT_TOKEN not set in Railway Variables")
 
-ADMIN_ID = int(os.getenv("6675176280", "0"))
+ADMIN_ID = os.getenv("ADMIN_ID")
+if not ADMIN_ID:
+    raise Exception("ADMIN_ID not set in Railway Variables")
+
+ADMIN_ID = int(ADMIN_ID)
 
 TG_URL = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
@@ -88,7 +93,7 @@ async def check_city(page, city):
         return False
 
     except Exception as e:
-        print("Error:", e)
+        print("Check error:", e)
         return False
 
 # ================= WORKER =================
@@ -104,7 +109,6 @@ async def worker():
             for city in CITIES:
 
                 users = get_users_by_city(city)
-
                 found = await check_city(page, city)
 
                 if found and users:
