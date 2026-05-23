@@ -6,8 +6,7 @@ from playwright.async_api import async_playwright
 
 # ================= CONFIG =================
 
-# مهم: خاص يكونو فـ Railway Variables
-TOKEN = os.getenv("8202293986:AAFDFxfm9O_ZfWWL9p4UAXmeTV7M4fSWtps")
+TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise Exception("BOT_TOKEN not set in Railway Variables")
 
@@ -26,8 +25,6 @@ CITIES = [
     "BILBAO","VALENCIA","GRANADA","CORDOBA","MALAGA"
 ]
 
-SERVICE = "POLICÍA - TOMA DE HUELLAS (EXPEDICIÓN DE TARJETA)"
-
 # ================= TELEGRAM =================
 
 class Telegram:
@@ -35,23 +32,19 @@ class Telegram:
         self.session = None
 
     async def init(self):
-        self.session = aiohttp.ClientSession()
+        if self.session is None:
+            self.session = aiohttp.ClientSession()
 
     async def send(self, msg):
-        try:
-            await self.session.post(
-                TG_URL,
-                data={
-                    "chat_id": ADMIN_ID,
-                    "text": msg
-                }
-            )
-        except Exception as e:
-            print("Telegram error:", e)
+        await self.init()
+        await self.session.post(
+            TG_URL,
+            data={"chat_id": ADMIN_ID, "text": msg}
+        )
 
 tg = Telegram()
 
-# ================= DATABASE =================
+# ================= DB =================
 
 conn = sqlite3.connect("users.db", check_same_thread=False)
 cur = conn.cursor()
@@ -67,7 +60,6 @@ CREATE TABLE IF NOT EXISTS users (
     active INTEGER DEFAULT 1
 )
 """)
-
 conn.commit()
 
 def get_users_by_city(city):
@@ -79,21 +71,23 @@ def get_users_by_city(city):
 
 # ================= CHECK =================
 
-async def check_city(page, city):
+async def check_city(context, city):
+    page = await context.new_page()
+
     try:
         await page.goto(URL, timeout=60000)
         await page.wait_for_load_state("domcontentloaded")
 
         html = await page.content()
 
-        # شرط بسيط (يمكن تطويره حسب الموقع)
-        if "no hay citas" not in html.lower():
-            return True
+        result = "no hay citas" not in html.lower()
 
-        return False
+        await page.close()
+        return result
 
     except Exception as e:
         print("Check error:", e)
+        await page.close()
         return False
 
 # ================= WORKER =================
@@ -102,32 +96,33 @@ async def worker():
     await tg.init()
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox"]
+        )
+        context = await browser.new_context()
 
         while True:
             for city in CITIES:
 
                 users = get_users_by_city(city)
-                found = await check_city(page, city)
+                found = await check_city(context, city)
 
                 if found and users:
-
                     for user in users:
                         await tg.send(
 f"""🔥 CITA DISPONIBLE
 
 📍 City: {city}
 
-👤 Name: {user[0]}
-📄 NIE: {user[1]}
-📧 Email: {user[3]}
-📞 Phone: {user[4]}
+👤 {user[0]}
+📄 {user[1]}
+📧 {user[3]}
+📞 {user[4]}
 
-🔗 Link:
-{URL}
+🔗 {URL}
 
-⚠️ Complete manually and confirm appointment
+⚠️ Manual confirmation required
 """
                         )
 
@@ -141,15 +136,12 @@ f"""🔥 CITA DISPONIBLE
 
 async def main():
     await tg.init()
-
     asyncio.create_task(worker())
 
-    await tg.send("🤖 Bot started successfully and monitoring appointments...")
+    await tg.send("🤖 Bot started successfully")
 
     while True:
         await asyncio.sleep(60)
-
-# ================= RUN =================
 
 if __name__ == "__main__":
     asyncio.run(main())
