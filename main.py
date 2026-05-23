@@ -37,10 +37,13 @@ class Telegram:
 
     async def send(self, msg):
         await self.init()
-        await self.session.post(
-            TG_URL,
-            data={"chat_id": ADMIN_ID, "text": msg}
-        )
+        try:
+            await self.session.post(
+                TG_URL,
+                data={"chat_id": ADMIN_ID, "text": msg}
+            )
+        except Exception as e:
+            print("Telegram error:", e)
 
 tg = Telegram()
 
@@ -94,27 +97,33 @@ async def check_city(context, city):
 
 async def worker():
     await tg.init()
+    await tg.send("🤖 Bot started successfully")
+
+    print("WORKER RUNNING")
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
             args=["--no-sandbox"]
         )
+
         context = await browser.new_context()
 
         while True:
+            print("CHECK LOOP ACTIVE")
+
             for city in CITIES:
 
-                users = get_users_by_city(city)
-                found = await check_city(context, city)
+                try:
+                    users = get_users_by_city(city)
+                    found = await check_city(context, city)
 
-                if found and users:
-                    for user in users:
-                        await tg.send(
+                    if found and users:
+                        for user in users:
+                            await tg.send(
 f"""🔥 CITA DISPONIBLE
 
 📍 City: {city}
-
 👤 {user[0]}
 📄 {user[1]}
 📧 {user[3]}
@@ -122,24 +131,23 @@ f"""🔥 CITA DISPONIBLE
 
 🔗 {URL}
 
-⚠️ Manual confirmation required
+⚠️ Confirm manually
 """
-                        )
+                            )
 
-                    await asyncio.sleep(30)
+                        await asyncio.sleep(30)
 
-                await asyncio.sleep(3)
+                    await asyncio.sleep(3)
+
+                except Exception as e:
+                    print("CITY ERROR:", e)
 
             await asyncio.sleep(10)
 
 # ================= MAIN =================
 
 async def main():
-    await tg.init()
-
-    await tg.send("🤖 Bot started successfully")
-
-    print("MAIN STARTED")
-
     await worker()
- 
+
+if __name__ == "__main__":
+    asyncio.run(main())
