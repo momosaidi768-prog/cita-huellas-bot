@@ -136,12 +136,10 @@ f"""🔥 CITA DISPONIBLE
 
 async def main():
     await tg.init()
-    asyncio.create_task(worker())
 
     await tg.send("🤖 Bot started successfully")
 
-    while True:
-        await asyncio.sleep(60)
+    print("MAIN STARTED")
 
-if __name__ == "__main__":
-    asyncio.run(main())
+    await worker()
+ 
