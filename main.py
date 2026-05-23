@@ -7,7 +7,7 @@ from playwright.async_api import async_playwright
 # ================= CONFIG =================
 
 # مهم: خاص يكونو فـ Railway Variables
-TOKEN = os.getenv("BOT_TOKEN")
+TOKEN = os.getenv("8202293986:AAFDFxfm9O_ZfWWL9p4UAXmeTV7M4fSWtps")
 if not TOKEN:
     raise Exception("BOT_TOKEN not set in Railway Variables")
 
